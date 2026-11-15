@@ -6,7 +6,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 const CATS = [["abaya", "Abayad"], ["tarxad", "Tarxado"], ["xijaab", "Xijaabyo"], ["saraawiil", "Saraawiil"], ["dirac", "Dirac"], ["kabo", "Kabo"], ["gabsaar", "Gabsaar"], ["caruur", "Dharka Caruurta"]];
 const SUBS = ["Rajatin", "Nigis", "Open"];
 const RST = ["La doonayo", "La dalbaday", "Yimid", "Waa la dhiibay"];
-const ADMIN_PHONE = "+252000000000"; // <-- BEDDEL: number-ka maamulka
+const ADMIN_PHONE = "+2520619801681"; // <-- BEDDEL: number-ka maamulka
 const LOW = 3;
 const tot = p => (p.variants || []).reduce((a, v) => a + (+v.qty || 0), 0);
 const st = p => { const t = tot(p); return t <= 0 ? "out" : t <= LOW ? "low" : "ok"; };
