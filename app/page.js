@@ -1,12 +1,16 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
+import { exportExcel, exportPDF } from "../lib/exports";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
-const CATS = [["abaya", "Abayad"], ["tarxad", "Tarxado"], ["xijaab", "Xijaabyo"], ["saraawiil", "Saraawiil"], ["dirac", "Dirac"], ["kabo", "Kabo"], ["gabsaar", "Gabsaar"], ["caruur", "Dharka Caruurta"]];
+const CATS = [["abaya", "Abayad"], ["tarxad", "Tarxado"], ["xijaab", "Xijaabyo"], ["saraawiil", "Saraawiil"], ["dirac", "Dirac"], ["kabo", "Kabo"], ["gabsaar", "Gabsaar"], ["carfo", "Carafta Dumarka"], ["caruur", "Dharka Caruurta"]];
 const SUBS = ["Rajatin", "Nigis", "Open"];
 const RST = ["La doonayo", "La dalbaday", "Yimid", "Waa la dhiibay"];
-const ADMIN_PHONE = "+2520619801681"; // <-- BEDDEL: number-ka maamulka
+const INC = ["Iib gacanta", "Lacag soo gashay", "Deyn la soo celiyay", "Maalgelin", "Kale"];
+const ADMIN_CALL = "+252617490814"; // Wicitaan (Hormuud)
+const ADMIN_WA = "+252619801681"; // WhatsApp
+const waLink = "https://wa.me/" + ADMIN_WA.replace(/\D/g, "");
 const LOW = 3;
 const tot = p => (p.variants || []).reduce((a, v) => a + (+v.qty || 0), 0);
 const st = p => { const t = tot(p); return t <= 0 ? "out" : t <= LOW ? "low" : "ok"; };
@@ -42,12 +46,12 @@ function Login() {
       <input type="email" required placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
       <input type="password" required placeholder="Password" value={pw} onChange={e => setPw(e.target.value)} />
       {err && <div className="err">{err}</div>}
-      <button>Gal</button>{ADMIN_PHONE && <p className="mut" style={{ textAlign: "center", margin: 0 }}>Cilad? Wac maamulka: <a href={"tel:" + ADMIN_PHONE.replace(/\s/g, "")}>{ADMIN_PHONE}</a></p>}
+      <button>Gal</button><p className="mut" style={{ textAlign: "center", margin: 0 }}>Cilad? La xiriir maamulka:<br /><a href={"tel:" + ADMIN_CALL}>📞 {ADMIN_CALL}</a> · <a href={waLink} target="_blank" rel="noreferrer">💬 WhatsApp</a></p>
     </form>
   );
 }
 
-const ICON = { abaya: "👘", tarxad: "🧣", xijaab: "🧕", saraawiil: "👖", dirac: "👗", kabo: "👠", gabsaar: "👜", caruur: "🧒" };
+const ICON = { abaya: "👘", tarxad: "🧣", xijaab: "🧕", saraawiil: "👖", dirac: "👗", kabo: "👠", gabsaar: "👜", carfo: "🌸", caruur: "🧒" };
 const NAV = [["dash", "📊", "Dashboard"], ["inv", "📦", "Inventory"], ["sales", "🧾", "Sales"], ["fin", "💰", "Finance"], ["req", "📝", "Dalabyada"], ["rep", "📄", "Reports"]];
 const METHODS = ["Cash", "EVC Plus", "E-Dahab", "Bank", "Card"];
 const EXPC = ["Kiro", "Mushahar", "Alaab iibsasho", "Gaadiid", "Korontada/Biyaha", "Suuq-geyn", "Kale"];
@@ -58,9 +62,9 @@ const sum = (a, f) => a.reduce((t, x) => t + (+f(x) || 0), 0);
 function App({ session }) {
   const [items, setItems] = useState([]), [sales, setSales] = useState([]), [fin, setFin] = useState([]);
   const [cat, setCat] = useState("all"), [q, setQ] = useState(""), [view, setView] = useState("dash"), [mode, setMode] = useState("grid"), [edit, setEdit] = useState(null), [menu, setMenu] = useState(false);
-  const [sub, setSub] = useState(""), [reqs, setReqs] = useState([]), [rf, setRf] = useState("today"), [rn, setRn] = useState({ item: "", cat: "abaya", details: "", qty: 1, customer: "", phone: "", need_date: today(), status: "La doonayo", note: "" }), [fm, setFm] = useState("all"), [proof, setProof] = useState(null);
+  const [sub, setSub] = useState(""), [reqs, setReqs] = useState([]), [rf, setRf] = useState("today"), [rn, setRn] = useState({ item: "", cat: "abaya", details: "", qty: 1, customer: "", phone: "", need_date: today(), status: "La doonayo", note: "" }), [fm, setFm] = useState("all"), [ft, setFt] = useState("dakhli"), [proof, setProof] = useState(null);
   const [cart, setCart] = useState([]), [cust, setCust] = useState(""), [method, setMethod] = useState("Cash"), [pick, setPick] = useState(""), [qty, setQty] = useState(1), [cp, setCp] = useState("");
-  const [fe, setFe] = useState({ kind: "expense", category: EXPC[0], description: "", amount: "", method: "Cash", date: today() }), [per, setPer] = useState(30);
+  const [fe, setFe] = useState({ kind: "income", category: INC[0], description: "", amount: "", method: "Cash", date: today() }), [per, setPer] = useState(30);
   const load = useCallback(async () => {
     const [a, b, c, d] = await Promise.all([
       supabase.from("catalog_items").select("*").order("created_at", { ascending: false }),
@@ -92,7 +96,8 @@ function App({ session }) {
   const go = v => { setView(v); setMenu(false); };
 
   const monthsAll = [...new Set([...sales.map(s => s.created_at.slice(0, 7)), ...fin.map(f => f.entry_date.slice(0, 7))])].sort().reverse();
-  const mRow = m => ({ inc: sum(sales.filter(s => s.created_at.startsWith(m)), s => s.total) + sum(fin.filter(f => f.kind === "income" && f.entry_date.startsWith(m)), f => f.amount), exp: sum(fin.filter(f => f.kind === "expense" && f.entry_date.startsWith(m)), f => f.amount) });
+  const mRow = m => { const sal = sum(sales.filter(x => x.created_at.startsWith(m)), x => x.total), oth = sum(fin.filter(f => f.kind === "income" && f.entry_date.startsWith(m)), f => f.amount); return { sal, oth, inc: sal + oth, exp: sum(fin.filter(f => f.kind === "expense" && f.entry_date.startsWith(m)), f => f.amount) }; };
+  const goFt = t => { setFt(t); if (t !== "bilaha") setFe({ ...fe, kind: t === "dakhli" ? "income" : "expense", category: t === "dakhli" ? INC[0] : EXPC[0] }); };
   const finList = fin.filter(f => fm === "all" || f.entry_date.startsWith(fm));
   const reqList = reqs.filter(r => rf === "all" ? true : rf === "today" ? (r.need_date <= today() && r.status !== "Waa la dhiibay") : r.status === rf);
   const reqOpen = reqs.filter(r => r.need_date <= today() && r.status !== "Waa la dhiibay").length;
@@ -130,19 +135,8 @@ function App({ session }) {
     await supabase.from("store_finance").insert({ kind: fe.kind, category: fe.category, description: fe.description, amount: +fe.amount, method: fe.method, entry_date: fe.date, proof_url });
     setFe({ ...fe, description: "", amount: "" }); setProof(null); load();
   }
-  const rows = () => items.flatMap(p => (p.variants?.length ? p.variants : [{}]).map(v => ({ Magac: p.name, Qayb: cn(p.cat), Qiimo: p.price, Midab: v.color || "", Cabbir: v.size || "", Tiro: v.qty || 0 })));
-  async function xlsx() {
-    const X = await import("xlsx"), wb = X.utils.book_new();
-    X.utils.book_append_sheet(wb, X.utils.json_to_sheet(rows()), "Inventory");
-    X.utils.book_append_sheet(wb, X.utils.json_to_sheet(sales.map(s => ({ Taariikh: s.created_at.slice(0, 10), Macmiil: s.customer, Habka: s.method, Wadarta: s.total, Alaab: (s.items || []).map(l => l.name + " x" + l.qty).join(", ") }))), "Sales");
-    X.utils.book_append_sheet(wb, X.utils.json_to_sheet(fin.map(f => ({ Taariikh: f.entry_date, Nooc: f.kind, Qayb: f.category, Faahfaahin: f.description, Lacag: f.amount, Habka: f.method }))), "Finance");
-    X.writeFile(wb, "kafaya-warbixin.xlsx");
-  }
-  async function pdf() {
-    const { default: J } = await import("jspdf"), AT = (await import("jspdf-autotable")).default, d = new J();
-    d.setFontSize(16); d.text("KAFAYA BOUTIQUE - Inventory", 14, 15);
-    AT(d, { startY: 22, head: [["Magac", "Qayb", "Qiimo", "Midab", "Cabbir", "Tiro"]], body: rows().map(r => Object.values(r)), headStyles: { fillColor: [114, 36, 62] } }); d.save("kafaya-inventory.pdf");
-  }
+  const exp = async fn => { try { await fn(); } catch (e) { alert("Export way fashilantay: " + (e.message || e)); } };
+  const xdata = { items, sales, fin, reqs, cn, salesP, finP, per };
   const Ic = ({ p }) => <div className="ic">{p.img ? <img alt="" src={p.img} /> : ICON[p.cat] || "🛍️"}</div>;
 
   return (
@@ -150,7 +144,7 @@ function App({ session }) {
       <aside className={"side" + (menu ? " open" : "")}>
         <div className="brand"><Logo /><div><b>KAFAYA</b><small>BOUTIQUE · Ku Filan</small></div></div>
         {NAV.map(n => <button key={n[0]} className={"nav" + (view === n[0] ? " on" : "")} onClick={() => go(n[0])}>{n[1]} {n[2]}{n[0] === "inv" && alerts.length > 0 && <span className="n">{alerts.length}</span>}{n[0] === "req" && reqOpen > 0 && <span className="n">{reqOpen}</span>}</button>)}
-        {ADMIN_PHONE && <a className="help" href={"tel:" + ADMIN_PHONE.replace(/\s/g, "")}>📞 Cilad? Wac maamulka<br /><b>{ADMIN_PHONE}</b></a>}
+        <div className="help"><div>Cilad? La xiriir maamulka</div><a href={"tel:" + ADMIN_CALL}>📞 Wac: {ADMIN_CALL}</a><a href={waLink} target="_blank" rel="noreferrer">💬 WhatsApp: {ADMIN_WA}</a></div>
         <div className="user">{session.user.email}<button className="g sm" onClick={() => supabase.auth.signOut()}>Ka bax</button></div>
       </aside>
       <div className="main">
@@ -192,18 +186,26 @@ function App({ session }) {
 
           {view === "fin" && <>
             <div className="stats">{[["c2", "⬆️", money(incM), "Dakhliga bishan"], ["c4", "⬇️", money(expM), "Kharashka bishan"], ["c1", "📈", money(incM - expM), "Faa'iidada bishan"]].map(s => <div className={"stat " + s[0]} key={s[3]}><div className="ic">{s[1]}</div><div><b>{s[2]}</b><span>{s[3]}</span></div></div>)}</div>
-            <div className="cols">
-              <div className="card"><h3>Dakhliga iyo kharashka (6 bilood)</h3><ResponsiveContainer width="100%" height={230}><BarChart data={months}><XAxis dataKey="m" tick={{ fontSize: 11 }} /><YAxis /><Tooltip /><Bar dataKey="Dakhli" fill="#2e7d32" radius={[5, 5, 0, 0]} /><Bar dataKey="Kharash" fill="#b3261e" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></div>
-              <form className="card gap" onSubmit={addEntry}><h3>Ku dar diiwaan</h3>
-                <div className="two"><label>Nooca<select value={fe.kind} onChange={e => setFe({ ...fe, kind: e.target.value, category: e.target.value === "expense" ? EXPC[0] : "Dakhli kale" })}><option value="expense">Kharash</option><option value="income">Dakhli</option></select></label>
-                  <label>Qaybta<select value={fe.category} onChange={e => setFe({ ...fe, category: e.target.value })}>{(fe.kind === "expense" ? EXPC : ["Dakhli kale"]).map(c => <option key={c}>{c}</option>)}</select></label></div>
+            <div className="seg" style={{ marginBottom: 14 }}>{[["dakhli", "⬆️ Dakhli (Revenue)"], ["kharash", "⬇️ Kharash (Expenses)"], ["bilaha", "📅 Bilaha"]].map(t => <button key={t[0]} className={ft === t[0] ? "on" : ""} onClick={() => goFt(t[0])}>{t[1]}</button>)}</div>
+            {ft !== "bilaha" && <div className="split">
+              <form className="card gap" onSubmit={addEntry}><h3>{ft === "dakhli" ? "Ku dar dakhli soo galay" : "Ku dar kharash baxay"}</h3>
+                <label>Qaybta<select value={fe.category} onChange={e => setFe({ ...fe, category: e.target.value })}>{(ft === "dakhli" ? INC : EXPC).map(c => <option key={c}>{c}</option>)}</select></label>
                 <label>Faahfaahin<input value={fe.description} onChange={e => setFe({ ...fe, description: e.target.value })} /></label>
                 <div className="two"><label>Lacagta ($)<input required type="number" step="0.01" min="0" value={fe.amount} onChange={e => setFe({ ...fe, amount: e.target.value })} /></label><label>Taariikh<input type="date" value={fe.date} onChange={e => setFe({ ...fe, date: e.target.value })} /></label></div>
-                <label>Habka<select value={fe.method} onChange={e => setFe({ ...fe, method: e.target.value })}>{METHODS.map(m => <option key={m}>{m}</option>)}</select></label><label>Sawirka caddaynta (screenshot)<input key={String(!!proof)} type="file" accept="image/*" onChange={e => setProof(e.target.files[0])} /></label><button>Kaydi</button></form>
-            </div>
-            <div className="card wrap" style={{ marginBottom: 14 }}><h3>Bilihii hore (riix bil si aad u aragto)</h3><table><thead><tr><th>Bil</th><th>Dakhli</th><th>Kharash</th><th>Faa'iido</th></tr></thead><tbody>{monthsAll.map(m => { const r = mRow(m); return <tr key={m} style={{ cursor: "pointer" }} onClick={() => setFm(m)}><td><b>{m}</b></td><td className="pos">{money(r.inc)}</td><td className="neg">{money(r.exp)}</td><td><b>{money(r.inc - r.exp)}</b></td></tr>; })}</tbody></table></div>
-            <div className="card wrap"><div className="row" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>Diiwaannada</h3><select style={{ width: "auto" }} value={fm} onChange={e => setFm(e.target.value)}><option value="all">Dhammaan bilaha</option>{monthsAll.map(m => <option key={m}>{m}</option>)}</select></div>
-              <table><thead><tr><th>Taariikh</th><th>Nooc</th><th>Qayb</th><th>Faahfaahin</th><th>Lacag</th><th>Caddayn</th><th></th></tr></thead><tbody>{finList.map(f => <tr key={f.id}><td>{f.entry_date}</td><td>{f.kind === "income" ? "Dakhli" : "Kharash"}</td><td>{f.category}</td><td>{f.description}</td><td className={f.kind === "income" ? "pos" : "neg"}>{f.kind === "income" ? "+" : "−"}{money(f.amount)}</td><td>{f.proof_url ? <button className="g sm" onClick={() => openProof(f.proof_url)}>📎 Eeg</button> : "-"}</td><td><button className="g sm" onClick={async () => { if (confirm("Tirtir?")) { await supabase.from("store_finance").delete().eq("id", f.id); load(); } }}>×</button></td></tr>)}</tbody></table>{finList.length === 0 && <p className="mut">Diiwaan ma jiro.</p>}</div></>}
+                <label>Habka<select value={fe.method} onChange={e => setFe({ ...fe, method: e.target.value })}>{METHODS.map(m => <option key={m}>{m}</option>)}</select></label>
+                <label>Sawirka caddaynta (screenshot)<input key={String(!!proof)} type="file" accept="image/*" onChange={e => setProof(e.target.files[0])} /></label>
+                <button>Kaydi</button>
+                {ft === "dakhli" && <p className="mut" style={{ margin: 0 }}>Iibka laga sameeyo menu-ga Sales si automatic ah ayaa loogu daraa revenue-ga. Halkan ku dar dakhliga kale oo keliya.</p>}</form>
+              <div className="card wrap">{(() => {
+                const L = finList.filter(f => f.kind === (ft === "dakhli" ? "income" : "expense")); return <>
+                  <div className="row" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>{ft === "dakhli" ? "Dakhliga la diiwaangeliyay" : "Kharashyada"}</h3><select style={{ width: "auto" }} value={fm} onChange={e => setFm(e.target.value)}><option value="all">Dhammaan bilaha</option>{monthsAll.map(m => <option key={m}>{m}</option>)}</select><b style={{ marginLeft: "auto" }} className={ft === "dakhli" ? "pos" : "neg"}>{money(sum(L, f => f.amount))}</b></div>
+                  <table><thead><tr><th>Taariikh</th><th>Qayb</th><th>Faahfaahin</th><th>Lacag</th><th>Caddayn</th><th></th></tr></thead><tbody>{L.map(f => <tr key={f.id}><td>{f.entry_date}</td><td>{f.category}</td><td>{f.description}</td><td className={ft === "dakhli" ? "pos" : "neg"}>{money(f.amount)}</td><td>{f.proof_url ? <button className="g sm" onClick={() => openProof(f.proof_url)}>📎 Eeg</button> : "-"}</td><td><button className="g sm" onClick={async () => { if (confirm("Tirtir?")) { await supabase.from("store_finance").delete().eq("id", f.id); load(); } }}>×</button></td></tr>)}</tbody></table>{L.length === 0 && <p className="mut">Diiwaan ma jiro.</p>}</>;
+              })()}</div>
+            </div>}
+            {ft === "bilaha" && <>
+              <div className="card" style={{ marginBottom: 14 }}><h3>Revenue-ka iyo kharashka bil kasta</h3><ResponsiveContainer width="100%" height={250}><BarChart data={monthsAll.slice(0, 12).reverse().map(m => { const r = mRow(m); return { m, Revenue: r.inc, Kharash: r.exp }; })}><XAxis dataKey="m" tick={{ fontSize: 11 }} /><YAxis /><Tooltip /><Bar dataKey="Revenue" fill="#2e7d32" radius={[5, 5, 0, 0]} /><Bar dataKey="Kharash" fill="#b3261e" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></div>
+              <div className="card wrap"><h3>Bilihii hore (riix bil si aad u aragto dakhligeeda)</h3><table><thead><tr><th>Bil</th><th>Iib (Sales)</th><th>Dakhli kale</th><th>Revenue guud</th><th>Kharash</th><th>Faa'iido</th></tr></thead><tbody>{monthsAll.map(m => { const r = mRow(m); return <tr key={m} style={{ cursor: "pointer" }} onClick={() => { setFm(m); goFt("dakhli"); }}><td><b>{m}</b></td><td>{money(r.sal)}</td><td>{money(r.oth)}</td><td className="pos"><b>{money(r.inc)}</b></td><td className="neg">{money(r.exp)}</td><td><b>{money(r.inc - r.exp)}</b></td></tr>; })}</tbody></table>{monthsAll.length === 0 && <p className="mut">Weli xog ma jirto.</p>}</div></>}
+          </>}
 
           {view === "req" && <div className="split">
             <form className="card gap" onSubmit={addReq}><h3>Dalab cusub / alaab la doonayo</h3>
@@ -217,7 +219,8 @@ function App({ session }) {
               <table><thead><tr><th>Alaab</th><th>Qayb</th><th>Tiro</th><th>Macmiil</th><th>Taariikh</th><th>Xaalad</th><th></th></tr></thead><tbody>{reqList.map(r => <tr key={r.id}><td><b>{r.item}</b><div className="mut">{r.details}{r.note ? " · " + r.note : ""}</div></td><td>{cn(r.cat)}</td><td>{r.qty}</td><td>{r.customer || "-"}{r.phone && <div><a href={"tel:" + r.phone}>{r.phone}</a></div>}</td><td>{r.need_date}</td><td><select style={{ width: "auto" }} value={r.status} onChange={e => setStatus(r, e.target.value)}>{RST.map(x => <option key={x}>{x}</option>)}</select></td><td><button className="g sm" onClick={async () => { if (confirm("Tirtir dalabkan?")) { await supabase.from("store_requests").delete().eq("id", r.id); load(); } }}>×</button></td></tr>)}</tbody></table>{reqList.length === 0 && <p className="mut">Dalab ma jiro.</p>}</div></div>}
 
           {view === "rep" && <>
-            <div className="row" style={{ marginBottom: 14 }}><select style={{ width: "auto" }} value={per} onChange={e => setPer(+e.target.value)}><option value={7}>7 maalmood</option><option value={30}>30 maalmood</option><option value={90}>90 maalmood</option><option value={0}>Dhammaan</option></select><span style={{ flex: 1 }} /><button onClick={xlsx}>⬇ Excel</button><button className="g" onClick={pdf}>⬇ PDF (Inventory)</button></div>
+            <div className="row" style={{ marginBottom: 14 }}><select style={{ width: "auto" }} value={per} onChange={e => setPer(+e.target.value)}><option value={7}>7 maalmood</option><option value={30}>30 maalmood</option><option value={90}>90 maalmood</option><option value={0}>Dhammaan</option></select><span style={{ flex: 1 }} /></div>
+            <div className="card" style={{ marginBottom: 14 }}><h3>Soo deji warbixinada</h3><div className="row"><button onClick={() => exp(() => exportExcel(xdata))}>⬇ Excel (dhammaan)</button>{[["inv", "PDF Inventory"], ["sales", "PDF Iibka"], ["fin", "PDF Maaliyadda"], ["months", "PDF Bilaha"]].map(t => <button key={t[0]} className="g" onClick={() => exp(() => exportPDF(t[0], xdata))}>⬇ {t[1]}</button>)}</div><p className="mut" style={{ marginBottom: 0 }}>PDF-ka Iibka iyo Maaliyadda wuxuu raacayaa muddada aad kor ka doorato.</p></div>
             <div className="stats">{[["c1", "🧾", salesP.length, "Tirada iibka"], ["c2", "⬆️", money(incP), "Dakhli"], ["c4", "⬇️", money(expP), "Kharash"], ["c3", "📈", money(incP - expP), "Faa'iido"]].map(s => <div className={"stat " + s[0]} key={s[3]}><div className="ic">{s[1]}</div><div><b>{s[2]}</b><span>{s[3]}</span></div></div>)}</div>
             <div className="cols">
               <div className="card"><h3>Alaabta ugu iibsiga badan</h3>{top.map(t => <div className="li" key={t.n}><div className="t"><b>{t.n}</b><span className="mut">{t.qty} xabbo</span></div><b>{money(t.rev)}</b></div>)}{top.length === 0 && <p className="mut">Xog ma jirto.</p>}</div>
