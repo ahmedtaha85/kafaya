@@ -142,7 +142,7 @@ function App({ session }) {
   return (
     <div className="app">
       <aside className={"side" + (menu ? " open" : "")}>
-        <div className="brand"><Logo /><div><b>KAFAYA</b><small>BOUTIQUE · Ku Filan</small></div></div>
+        <div className="brand"><Logo /><div><b>KAFAYA</b><small>BOUTIQUE | Xarago & Asturnan </small></div></div>
         {NAV.map(n => <button key={n[0]} className={"nav" + (view === n[0] ? " on" : "")} onClick={() => go(n[0])}>{n[1]} {n[2]}{n[0] === "inv" && alerts.length > 0 && <span className="n">{alerts.length}</span>}{n[0] === "req" && reqOpen > 0 && <span className="n">{reqOpen}</span>}</button>)}
         <div className="help"><div>Cilad? La xiriir maamulka</div><a href={"tel:" + ADMIN_CALL}>📞 Wac: {ADMIN_CALL}</a><a href={waLink} target="_blank" rel="noreferrer">💬 WhatsApp: {ADMIN_WA}</a></div>
         <div className="user">{session.user.email}<button className="g sm" onClick={() => supabase.auth.signOut()}>Ka bax</button></div>
