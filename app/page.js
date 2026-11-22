@@ -1,13 +1,14 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
-import { exportExcel, exportPDF } from "../lib/exports";
+import { exportExcel, exportPDF, exportCustomers } from "../lib/exports";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
-const CATS = [["abaya", "Abayad"], ["tarxad", "Tarxado"], ["xijaab", "Xijaabyo"], ["saraawiil", "Saraawiil"], ["dirac", "Dirac"], ["kabo", "Kabo"], ["gabsaar", "Gabsaar"], ["carfo", "Carafta Dumarka"], ["caruur", "Dharka Caruurta"]];
-const SUBS = ["Rajatin", "Nigis", "Open"];
-const RST = ["La doonayo", "La dalbaday", "Yimid", "Waa la dhiibay"];
-const INC = ["Iib gacanta", "Lacag soo gashay", "Deyn la soo celiyay", "Maalgelin", "Kale"];
+const CATS = [["abaya","Abayad"],["tarxad","Tarxado"],["xijaab","Xijaabyo"],["saraawiil","Saraawiil"],["dirac","Dirac"],["kabo","Kabo"],["gabsaar","Gabsaar"],["carfo","Carafta Dumarka"],["caruur","Dharka Caruurta"]];
+const SUBS = ["Rajatin","Nigis","Open"];
+const RST = ["La dalbaday", "Waddada ku jira", "Yimid", "Stock-ga la geliyay"];
+const ORIGINS = ["China", "Dubai", "Kale"];
+const INC = ["Iib gacanta","Lacag soo gashay","Deyn la soo celiyay","Maalgelin","Kale"];
 const ADMIN_CALL = "+252617490814"; // Wicitaan (Hormuud)
 const ADMIN_WA = "+252619801681"; // WhatsApp
 const waLink = "https://wa.me/" + ADMIN_WA.replace(/\D/g, "");
@@ -23,46 +24,79 @@ const Logo = () => (
 );
 
 export default function Page() {
-  const [session, setSession] = useState(undefined);
+  const [session, setSession] = useState(undefined), [staff, setStaff] = useState(undefined);
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    const { data } = supabase.auth.onAuthStateChange((_e, x) => setSession(x));
     return () => data.subscription.unsubscribe();
   }, []);
+  const uid = session?.user?.id;
+  useEffect(() => {
+    if (!uid) { setStaff(undefined); return; }
+    supabase.from("staff").select("*").eq("user_id", uid).maybeSingle().then(({ data }) => setStaff(data || null));
+  }, [uid]);
   if (session === undefined) return null;
-  return session ? <App session={session} /> : <Login />;
+  if (!session) return <Login />;
+  if (staff === undefined) return null;
+  if (!staff || !staff.active) return <Blocked />;
+  return <App session={session} staff={staff} />;
+}
+
+function Blocked() {
+  return (
+    <div className="card login" style={{ textAlign: "center", display: "grid", gap: 10 }}>
+      <h2 style={{ margin: 0, color: "var(--mar)" }}>Akoonkaaga lama furin</h2>
+      <p className="mut">Akoonkaaga waa la xiray ama weli lama dhamaystirin. La xiriir admin-ka.</p>
+      <a href={"tel:" + ADMIN_CALL}>📞 {ADMIN_CALL}</a>
+      <a href={"https://wa.me/" + waNum(ADMIN_WA)} target="_blank" rel="noreferrer">💬 WhatsApp</a>
+      <button className="g" onClick={() => supabase.auth.signOut()}>Ka bax</button>
+    </div>
+  );
 }
 
 function Login() {
-  const [email, setEmail] = useState(""), [pw, setPw] = useState(""), [err, setErr] = useState("");
+  const [u, setU] = useState(""), [pw, setPw] = useState(""), [err, setErr] = useState(""), [busy, setBusy] = useState(false);
   async function go(e) {
-    e.preventDefault();
+    e.preventDefault(); setBusy(true); setErr("");
+    const id = u.trim().toLowerCase(), email = id.includes("@") ? id : id + "@kafaya.staff";
     const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
-    if (error) setErr("Email ama password waa khalad.");
+    setBusy(false); if (error) setErr("Username ama password waa khalad.");
   }
+  const wa = msg => "https://wa.me/" + waNum(ADMIN_WA) + "?text=" + encodeURIComponent(msg);
   return (
     <form className="card login" onSubmit={go} style={{ display: "grid", gap: 12 }}>
       <div style={{ textAlign: "center" }}><h1 style={{ margin: 0, color: "var(--mar)", fontFamily: "Cormorant Garamond,serif", letterSpacing: 3 }}>KAFAYA BOUTIQUE</h1><span className="mut">Gal nidaamka maamulka</span></div>
-      <input type="email" required placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
+      <input required placeholder="Username (code)" autoCapitalize="none" value={u} onChange={e => setU(e.target.value)} />
       <input type="password" required placeholder="Password" value={pw} onChange={e => setPw(e.target.value)} />
       {err && <div className="err">{err}</div>}
-      <button>Gal</button><p className="mut" style={{ textAlign: "center", margin: 0 }}>Cilad? La xiriir maamulka:<br /><a href={"tel:" + ADMIN_CALL}>📞 {ADMIN_CALL}</a> · <a href={waLink} target="_blank" rel="noreferrer">💬 WhatsApp</a></p>
+      <button disabled={busy}>{busy ? "Waa la galayaa..." : "Gal"}</button>
+      <div className="row" style={{ justifyContent: "space-between", fontSize: 13 }}>
+        <a href={wa("Password-kayga waan illoobay. Username-kaygu waa: " + u)} target="_blank" rel="noreferrer">Password-ka ilaaway?</a>
+        <a href={wa("Waxaan rabaa akoon cusub oo Kafaya system ah.")} target="_blank" rel="noreferrer">Akoon cusub (Register)</a>
+      </div>
+      <p className="mut" style={{ textAlign: "center", margin: 0 }}>Admin keliya ayaa akoon abuuri kara ama password beddeli kara.<br /><a href={"tel:" + ADMIN_CALL}>📞 {ADMIN_CALL}</a> · <a href={"https://wa.me/" + waNum(ADMIN_WA)} target="_blank" rel="noreferrer">💬 WhatsApp</a></p>
     </form>
   );
 }
 
-const ICON = { abaya: "👘", tarxad: "🧣", xijaab: "🧕", saraawiil: "👖", dirac: "👗", kabo: "👠", gabsaar: "👜", carfo: "🌸", caruur: "🧒" };
-const NAV = [["dash", "📊", "Dashboard"], ["inv", "📦", "Inventory"], ["sales", "🧾", "Sales"], ["fin", "💰", "Finance"], ["req", "📝", "Dalabyada"], ["rep", "📄", "Reports"]];
-const METHODS = ["Cash", "EVC Plus", "E-Dahab", "Bank", "Card"];
-const EXPC = ["Kiro", "Mushahar", "Alaab iibsasho", "Gaadiid", "Korontada/Biyaha", "Suuq-geyn", "Kale"];
+const ICON={abaya:"👘",tarxad:"🧣",xijaab:"🧕",saraawiil:"👖",dirac:"👗",kabo:"👠",gabsaar:"👜",carfo:"🌸",caruur:"🧒"};
+const ROLE_L = { admin: "Admin", supervisor: "Supervisor", cashier: "Cashier" };
+const NAV=[["dash","📊","Dashboard"],["inv","📦","Inventory"],["sales","🧾","Sales"],["cust","👥","Macaamiisha"],["fin","💰","Finance"],["req","📝","Dalabyada"],["rep","📄","Reports"],["staff","🔐","Shaqaalaha"]];
+const METHODS=["Cash","EVC Plus","E-Dahab","Bank","Card"];
+const EXPC=["Kiro","Mushahar","Alaab iibsasho","Gaadiid","Korontada/Biyaha","Suuq-geyn","Kale"];
 const money = n => "$" + (+n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 const today = () => new Date().toISOString().slice(0, 10);
 const sum = (a, f) => a.reduce((t, x) => t + (+f(x) || 0), 0);
+const impTotal = r => (+r.qty || 0) * (+r.unit_cost || 0) + (+r.shipping || 0);
+const waNum = p => { let d = (p || "").replace(/\D/g, ""); if (d.startsWith("00")) d = d.slice(2); if (d.startsWith("0")) d = d.slice(1); return d.length <= 9 ? "252" + d : d; };
 
-function App({ session }) {
+function App({ session, staff }) {
+  const mgr = staff.role !== "cashier", isAdmin = staff.role === "admin";
+  const nav = NAV.filter(n => isAdmin || (n[0] !== "staff" && (mgr || ["inv", "sales", "cust"].includes(n[0]))));
   const [items, setItems] = useState([]), [sales, setSales] = useState([]), [fin, setFin] = useState([]);
-  const [cat, setCat] = useState("all"), [q, setQ] = useState(""), [view, setView] = useState("dash"), [mode, setMode] = useState("grid"), [edit, setEdit] = useState(null), [menu, setMenu] = useState(false);
-  const [sub, setSub] = useState(""), [reqs, setReqs] = useState([]), [rf, setRf] = useState("today"), [rn, setRn] = useState({ item: "", cat: "abaya", details: "", qty: 1, customer: "", phone: "", need_date: today(), status: "La doonayo", note: "" }), [fm, setFm] = useState("all"), [ft, setFt] = useState("dakhli"), [proof, setProof] = useState(null);
+  const [cat, setCat] = useState("all"), [q, setQ] = useState(""), [view, setView] = useState(staff.role === "cashier" ? "sales" : "dash"), [mode, setMode] = useState("grid"), [edit, setEdit] = useState(null), [menu, setMenu] = useState(false);
+  const [sub, setSub] = useState(""), [reqs, setReqs] = useState([]), [rf, setRf] = useState("all"), [rn, setRn] = useState({ item: "", cat: "abaya", details: "", qty: 1, origin: "China", supplier: "", unit_cost: "", shipping: "", order_date: today(), eta: "", tracking: "", status: "La dalbaday", note: "" }), [asExp, setAsExp] = useState(true), [fm, setFm] = useState("all"), [ft, setFt] = useState("dakhli"), [proof, setProof] = useState(null);
+  const [sdate, setSdate] = useState(today()), [cphone, setCphone] = useState("");
   const [cart, setCart] = useState([]), [cust, setCust] = useState(""), [method, setMethod] = useState("Cash"), [pick, setPick] = useState(""), [qty, setQty] = useState(1), [cp, setCp] = useState("");
   const [fe, setFe] = useState({ kind: "income", category: INC[0], description: "", amount: "", method: "Cash", date: today() }), [per, setPer] = useState(30);
   const load = useCallback(async () => {
@@ -70,7 +104,7 @@ function App({ session }) {
       supabase.from("catalog_items").select("*").order("created_at", { ascending: false }),
       supabase.from("store_sales").select("*").order("created_at", { ascending: false }),
       supabase.from("store_finance").select("*").order("entry_date", { ascending: false }),
-      supabase.from("store_requests").select("*").order("need_date", { ascending: true })]);
+      supabase.from("store_imports").select("*").order("order_date", { ascending: false })]);
     setItems(a.data || []); setSales(b.data || []); setFin(c.data || []); setReqs(d.data || []);
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -99,10 +133,20 @@ function App({ session }) {
   const mRow = m => { const sal = sum(sales.filter(x => x.created_at.startsWith(m)), x => x.total), oth = sum(fin.filter(f => f.kind === "income" && f.entry_date.startsWith(m)), f => f.amount); return { sal, oth, inc: sal + oth, exp: sum(fin.filter(f => f.kind === "expense" && f.entry_date.startsWith(m)), f => f.amount) }; };
   const goFt = t => { setFt(t); if (t !== "bilaha") setFe({ ...fe, kind: t === "dakhli" ? "income" : "expense", category: t === "dakhli" ? INC[0] : EXPC[0] }); };
   const finList = fin.filter(f => fm === "all" || f.entry_date.startsWith(fm));
-  const reqList = reqs.filter(r => rf === "all" ? true : rf === "today" ? (r.need_date <= today() && r.status !== "Waa la dhiibay") : r.status === rf);
-  const reqOpen = reqs.filter(r => r.need_date <= today() && r.status !== "Waa la dhiibay").length;
-  async function addReq(e) { e.preventDefault(); await supabase.from("store_requests").insert({ ...rn, qty: +rn.qty || 1 }); setRn({ ...rn, item: "", details: "", customer: "", phone: "", note: "" }); load(); }
-  async function setStatus(r, status) { await supabase.from("store_requests").update({ status }).eq("id", r.id); load(); }
+const reqList = reqs.filter(r => rf === "all" || r.status === rf);
+const reqOpen = reqs.filter(r => r.status === "La dalbaday" || r.status === "Waddada ku jira").length;
+  const transitVal = sum(reqs.filter(r => r.status === "La dalbaday" || r.status === "Waddada ku jira"), impTotal), impMonth = sum(reqs.filter(r => (r.order_date || "").startsWith(mk)), impTotal);
+  const custs = Object.values(sales.filter(x => (x.customer_phone || "").trim()).reduce((a, x) => { const k = x.customer_phone.replace(/\D/g, ""); const c = a[k] || (a[k] = { phone: x.customer_phone, name: "", visits: 0, total: 0, last: "" }); c.name = c.name || x.customer || ""; c.visits++; c.total += +x.total || 0; if (x.created_at > c.last) c.last = x.created_at; return a; }, {})).sort((a, b) => b.total - a.total);
+async function addReq(e) {
+    e.preventDefault(); let proof_url = null;
+    if (proof) { const path = crypto.randomUUID() + "-" + proof.name.replace(/[^\w.]/g, "_"); const { error } = await supabase.storage.from("proofs").upload(path, proof); if (error) return alert("Sawirka lama upload gareyn karin: " + error.message); proof_url = path; }
+    const row = { ...rn, qty: +rn.qty || 1, unit_cost: +rn.unit_cost || 0, shipping: +rn.shipping || 0, eta: rn.eta || null, proof_url };
+    const { error } = await supabase.from("store_imports").insert(row); if (error) return alert(error.message);
+    if (asExp) await supabase.from("store_finance").insert({ kind: "expense", category: "Alaab iibsasho", description: "Dalab " + rn.origin + ": " + rn.item, amount: impTotal(row), method: "Bank", entry_date: rn.order_date, proof_url });
+    setRn({ ...rn, item: "", details: "", supplier: "", unit_cost: "", shipping: "", eta: "", tracking: "", note: "" }); setProof(null); load();
+  }
+async function setStatus(r, status) { await supabase.from("store_imports").update({ status }).eq("id", r.id); load(); }
+  async function updSale(x, patch) { await supabase.from("store_sales").update(patch).eq("id", x.id); load(); }
   async function openProof(path) { const { data } = await supabase.storage.from("proofs").createSignedUrl(path, 120); if (data) window.open(data.signedUrl, "_blank"); }
   async function del(p) { if (confirm("Ma hubtaa inaad tirtirto " + p.name + "?")) { await supabase.from("catalog_items").delete().eq("id", p.id); load(); } }
   async function adj(p, i, d) {
@@ -121,8 +165,8 @@ function App({ session }) {
     const upd = {};
     cart.forEach(l => { const p = upd[l.id] || items.find(x => x.id === l.id); upd[l.id] = { ...p, variants: p.variants.map((x, j) => j === l.i ? { ...x, qty: Math.max(0, x.qty - l.qty) } : x) }; });
     for (const id in upd) await supabase.from("catalog_items").update({ variants: upd[id].variants }).eq("id", id);
-    await supabase.from("store_sales").insert({ customer: cust, method, total: cartTotal, items: cart.map(({ id, i, name, color, size, qty, price }) => ({ id, i, name, color, size, qty, price })) });
-    setCart([]); setCust(""); load();
+    await supabase.from("store_sales").insert({ customer: cust, customer_phone: cphone, created_at: sdate + "T12:00:00.000Z", method, total: cartTotal, items: cart.map(({ id, i, name, color, size, qty, price }) => ({ id, i, name, color, size, qty, price })) });
+    setCart([]); setCust(""); setCphone(""); load();
   }
   async function cancelSale(s) {
     if (!confirm("Jooji iibkan oo stock-ga soo celi?")) return;
@@ -135,6 +179,7 @@ function App({ session }) {
     await supabase.from("store_finance").insert({ kind: fe.kind, category: fe.category, description: fe.description, amount: +fe.amount, method: fe.method, entry_date: fe.date, proof_url });
     setFe({ ...fe, description: "", amount: "" }); setProof(null); load();
   }
+const myPw = async () => { const pw = prompt("Password cusub (ugu yaraan 6 xaraf):"); if (!pw) return; if (pw.length < 6) return alert("Waa gaaban yahay"); const { error } = await supabase.auth.updateUser({ password: pw }); alert(error ? error.message : "Password-ka waa la beddelay ✅"); };
   const exp = async fn => { try { await fn(); } catch (e) { alert("Export way fashilantay: " + (e.message || e)); } };
   const xdata = { items, sales, fin, reqs, cn, salesP, finP, per };
   const Ic = ({ p }) => <div className="ic">{p.img ? <img alt="" src={p.img} /> : ICON[p.cat] || "🛍️"}</div>;
@@ -142,10 +187,10 @@ function App({ session }) {
   return (
     <div className="app">
       <aside className={"side" + (menu ? " open" : "")}>
-        <div className="brand"><Logo /><div><b>KAFAYA</b><small>BOUTIQUE | Xarago & Asturnan </small></div></div>
-        {NAV.map(n => <button key={n[0]} className={"nav" + (view === n[0] ? " on" : "")} onClick={() => go(n[0])}>{n[1]} {n[2]}{n[0] === "inv" && alerts.length > 0 && <span className="n">{alerts.length}</span>}{n[0] === "req" && reqOpen > 0 && <span className="n">{reqOpen}</span>}</button>)}
+        <div className="brand"><Logo /><div><b>KAFAYA</b><small>BOUTIQUE · Ku Filan</small></div></div>
+        {nav.map(n => <button key={n[0]} className={"nav" + (view === n[0] ? " on" : "")} onClick={() => go(n[0])}>{n[1]} {n[2]}{n[0] === "inv" && alerts.length > 0 && <span className="n">{alerts.length}</span>}{n[0] === "req" && reqOpen > 0 && <span className="n">{reqOpen}</span>}</button>)}
         <div className="help"><div>Cilad? La xiriir maamulka</div><a href={"tel:" + ADMIN_CALL}>📞 Wac: {ADMIN_CALL}</a><a href={waLink} target="_blank" rel="noreferrer">💬 WhatsApp: {ADMIN_WA}</a></div>
-        <div className="user">{session.user.email}<button className="g sm" onClick={() => supabase.auth.signOut()}>Ka bax</button></div>
+        <div className="user"><b>{staff.full_name || staff.username}</b> · {ROLE_L[staff.role]}<br />{staff.username}<button className="g sm" onClick={myPw}>Beddel password</button><button className="g sm" onClick={() => supabase.auth.signOut()}>Ka bax</button></div>
       </aside>
       <div className="main">
         <div className="top">
@@ -168,7 +213,7 @@ function App({ session }) {
             <div className="row" style={{ marginBottom: 12 }}><div className="seg"><button className={mode === "grid" ? "on" : ""} onClick={() => setMode("grid")}>Kaararka</button><button className={mode === "table" ? "on" : ""} onClick={() => setMode("table")}>Shaxda stock-ga</button></div><span className="mut">Qiimaha stock-ga: {money(stockVal)}</span></div>
             <div className="tabs">{[["all", "Dhammaan"], ...CATS].map(c => <button key={c[0]} className={"tab" + (cat === c[0] ? " on" : "")} onClick={() => { setCat(c[0]); setSub(""); }}>{c[1]}</button>)}</div>
             {cat === "abaya" && <div className="tabs">{["", ...SUBS].map(x => <button key={x} className={"tab" + (sub === x ? " on" : "")} onClick={() => setSub(x)}>{x || "Dhammaan Abayad"}</button>)}</div>}
-            {mode === "grid" ? <div className="grid">{list.length === 0 && <p className="mut">Alaab lama helin.</p>}{list.map(p => <div className="item" key={p.id}><div className="ph">{p.img ? <img alt="" src={p.img} /> : ICON[p.cat]}</div><div className="bd"><h4>{p.name}</h4><span className="mut">{cn(p.cat)}{p.sub ? " · " + p.sub : ""}</span>{p.price > 0 && <div className="price">{money(p.price)}</div>}<div>{(p.variants || []).map((v, i) => <span className="chip" key={i}>{v.color || "-"} · {v.size || "-"} · {v.qty}</span>)}</div><span className={"badge " + st(p)}>{STL[st(p)]} · {tot(p)}</span><div className="row"><button className="g sm" onClick={() => setEdit(p)}>Wax ka beddel</button><button className="g sm" onClick={() => del(p)}>Tirtir</button></div></div></div>)}</div>
+            {mode === "grid" ? <div className="grid">{list.length === 0 && <p className="mut">Alaab lama helin.</p>}{list.map(p => <div className="item" key={p.id}><div className="ph">{p.img ? <img alt="" src={p.img} /> : ICON[p.cat]}</div><div className="bd"><h4>{p.name}</h4><span className="mut">{cn(p.cat)}{p.sub ? " · " + p.sub : ""}</span>{p.price > 0 && <div className="price">{money(p.price)}</div>}<div>{(p.variants || []).map((v, i) => <span className="chip" key={i}>{v.color || "-"} · {v.size || "-"} · {v.qty}</span>)}</div><span className={"badge " + st(p)}>{STL[st(p)]} · {tot(p)}</span><div className="row"><button className="g sm" onClick={() => setEdit(p)}>Wax ka beddel</button>{mgr && <button className="g sm" onClick={() => del(p)}>Tirtir</button>}</div></div></div>)}</div>
               : <div className="card wrap"><table><thead><tr><th>Alaab</th><th>Midab</th><th>Cabbir</th><th>Tiro</th><th>Xaalad</th></tr></thead><tbody>{list.flatMap(p => (p.variants || []).map((v, i) => { const s = v.qty <= 0 ? "out" : v.qty <= LOW ? "low" : "ok"; return <tr key={p.id + i}><td><b>{p.name}</b></td><td>{v.color || "-"}</td><td>{v.size || "-"}</td><td><span className="qty"><button className="g" onClick={() => adj(p, i, -1)}>−</button><b>{v.qty}</b><button onClick={() => adj(p, i, 1)}>+</button></span></td><td><span className={"badge " + s}>{STL[s]}</span></td></tr>; }))}</tbody></table></div>}
           </>}
 
@@ -178,11 +223,12 @@ function App({ session }) {
               <div className="two"><label>Tirada<input type="number" min="1" value={qty} onChange={e => setQty(e.target.value)} /></label><label>Qiimaha ($)<input type="number" step="0.01" value={cp} onChange={e => setCp(e.target.value)} /></label></div>
               <button className="g" onClick={addCart}>+ Ku dar gaarigga</button>
               {cart.map((l, i) => <div className="li" key={i}><div className="t"><b>{l.name}</b><span className="mut">{l.color || "-"} · {l.size || "-"} · {l.qty} × {money(l.price)}</span></div><b>{money(l.qty * l.price)}</b><button className="g sm" onClick={() => setCart(cart.filter((_, j) => j !== i))}>×</button></div>)}
-              <label>Macmiilka (ikhtiyaari)<input value={cust} onChange={e => setCust(e.target.value)} /></label>
+              <label>Taariikhda iibka (waa la beddeli karaa)<input type="date" max={today()} value={sdate} onChange={e => setSdate(e.target.value)} /></label>
+              <div className="two"><label>Macmiilka<input value={cust} onChange={e => setCust(e.target.value)} /></label><label>Telefoon (marketing)<input type="tel" value={cphone} onChange={e => setCphone(e.target.value)} placeholder="+252..." /></label></div>
               <label>Habka lacag bixinta<select value={method} onChange={e => setMethod(e.target.value)}>{METHODS.map(m => <option key={m}>{m}</option>)}</select></label>
               <div className="tot"><span>Wadarta</span><span>{money(cartTotal)}</span></div>
               <button disabled={!cart.length} onClick={sell}>Dhammaystir iibka</button></div>
-            <div className="card wrap"><h3>Taariikhda iibka</h3><table><thead><tr><th>Taariikh</th><th>Macmiil</th><th>Alaab</th><th>Habka</th><th>Wadarta</th><th></th></tr></thead><tbody>{sales.map(s => <tr key={s.id}><td>{s.created_at.slice(0, 10)}</td><td>{s.customer || "-"}</td><td>{(s.items || []).map(l => l.name + " ×" + l.qty).join(", ")}</td><td>{s.method}</td><td><b>{money(s.total)}</b></td><td><button className="g sm" onClick={() => cancelSale(s)}>Jooji</button></td></tr>)}</tbody></table>{sales.length === 0 && <p className="mut">Weli iib ma jiro.</p>}</div></div>}
+            <div className="card wrap"><h3>Taariikhda iibka</h3><table><thead><tr><th>Taariikh</th><th>Macmiil</th><th>Telefoon</th><th>Alaab</th><th>Habka</th><th>Wadarta</th><th></th></tr></thead><tbody>{sales.map(s => <tr key={s.id}><td><input type="date" disabled={!mgr} style={{ width: 140 }} max={today()} value={s.created_at.slice(0, 10)} onChange={e => e.target.value && updSale(s, { created_at: e.target.value + "T12:00:00.000Z" })} /></td><td>{s.customer || "-"}</td><td><input key={s.id + (s.customer_phone || "")} type="tel" disabled={!mgr} style={{ width: 130 }} defaultValue={s.customer_phone || ""} onBlur={e => e.target.value !== (s.customer_phone || "") && updSale(s, { customer_phone: e.target.value })} /></td><td>{(s.items || []).map(l => l.name + " ×" + l.qty).join(", ")}</td><td>{s.method}</td><td><b>{money(s.total)}</b></td><td>{mgr && <button className="g sm" onClick={() => cancelSale(s)}>Jooji</button>}</td></tr>)}</tbody></table>{sales.length === 0 && <p className="mut">Weli iib ma jiro.</p>}</div></div>}
 
           {view === "fin" && <>
             <div className="stats">{[["c2", "⬆️", money(incM), "Dakhliga bishan"], ["c4", "⬇️", money(expM), "Kharashka bishan"], ["c1", "📈", money(incM - expM), "Faa'iidada bishan"]].map(s => <div className={"stat " + s[0]} key={s[3]}><div className="ic">{s[1]}</div><div><b>{s[2]}</b><span>{s[3]}</span></div></div>)}</div>
@@ -196,27 +242,38 @@ function App({ session }) {
                 <label>Sawirka caddaynta (screenshot)<input key={String(!!proof)} type="file" accept="image/*" onChange={e => setProof(e.target.files[0])} /></label>
                 <button>Kaydi</button>
                 {ft === "dakhli" && <p className="mut" style={{ margin: 0 }}>Iibka laga sameeyo menu-ga Sales si automatic ah ayaa loogu daraa revenue-ga. Halkan ku dar dakhliga kale oo keliya.</p>}</form>
-              <div className="card wrap">{(() => {
-                const L = finList.filter(f => f.kind === (ft === "dakhli" ? "income" : "expense")); return <>
-                  <div className="row" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>{ft === "dakhli" ? "Dakhliga la diiwaangeliyay" : "Kharashyada"}</h3><select style={{ width: "auto" }} value={fm} onChange={e => setFm(e.target.value)}><option value="all">Dhammaan bilaha</option>{monthsAll.map(m => <option key={m}>{m}</option>)}</select><b style={{ marginLeft: "auto" }} className={ft === "dakhli" ? "pos" : "neg"}>{money(sum(L, f => f.amount))}</b></div>
-                  <table><thead><tr><th>Taariikh</th><th>Qayb</th><th>Faahfaahin</th><th>Lacag</th><th>Caddayn</th><th></th></tr></thead><tbody>{L.map(f => <tr key={f.id}><td>{f.entry_date}</td><td>{f.category}</td><td>{f.description}</td><td className={ft === "dakhli" ? "pos" : "neg"}>{money(f.amount)}</td><td>{f.proof_url ? <button className="g sm" onClick={() => openProof(f.proof_url)}>📎 Eeg</button> : "-"}</td><td><button className="g sm" onClick={async () => { if (confirm("Tirtir?")) { await supabase.from("store_finance").delete().eq("id", f.id); load(); } }}>×</button></td></tr>)}</tbody></table>{L.length === 0 && <p className="mut">Diiwaan ma jiro.</p>}</>;
-              })()}</div>
+              <div className="card wrap">{(() => { const L = finList.filter(f => f.kind === (ft === "dakhli" ? "income" : "expense")); return <>
+                <div className="row" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>{ft === "dakhli" ? "Dakhliga la diiwaangeliyay" : "Kharashyada"}</h3><select style={{ width: "auto" }} value={fm} onChange={e => setFm(e.target.value)}><option value="all">Dhammaan bilaha</option>{monthsAll.map(m => <option key={m}>{m}</option>)}</select><b style={{ marginLeft: "auto" }} className={ft === "dakhli" ? "pos" : "neg"}>{money(sum(L, f => f.amount))}</b></div>
+                <table><thead><tr><th>Taariikh</th><th>Qayb</th><th>Faahfaahin</th><th>Lacag</th><th>Caddayn</th><th></th></tr></thead><tbody>{L.map(f => <tr key={f.id}><td>{f.entry_date}</td><td>{f.category}</td><td>{f.description}</td><td className={ft === "dakhli" ? "pos" : "neg"}>{money(f.amount)}</td><td>{f.proof_url ? <button className="g sm" onClick={() => openProof(f.proof_url)}>📎 Eeg</button> : "-"}</td><td><button className="g sm" onClick={async () => { if (confirm("Tirtir?")) { await supabase.from("store_finance").delete().eq("id", f.id); load(); } }}>×</button></td></tr>)}</tbody></table>{L.length === 0 && <p className="mut">Diiwaan ma jiro.</p>}</>; })()}</div>
             </div>}
             {ft === "bilaha" && <>
               <div className="card" style={{ marginBottom: 14 }}><h3>Revenue-ka iyo kharashka bil kasta</h3><ResponsiveContainer width="100%" height={250}><BarChart data={monthsAll.slice(0, 12).reverse().map(m => { const r = mRow(m); return { m, Revenue: r.inc, Kharash: r.exp }; })}><XAxis dataKey="m" tick={{ fontSize: 11 }} /><YAxis /><Tooltip /><Bar dataKey="Revenue" fill="#2e7d32" radius={[5, 5, 0, 0]} /><Bar dataKey="Kharash" fill="#b3261e" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></div>
               <div className="card wrap"><h3>Bilihii hore (riix bil si aad u aragto dakhligeeda)</h3><table><thead><tr><th>Bil</th><th>Iib (Sales)</th><th>Dakhli kale</th><th>Revenue guud</th><th>Kharash</th><th>Faa'iido</th></tr></thead><tbody>{monthsAll.map(m => { const r = mRow(m); return <tr key={m} style={{ cursor: "pointer" }} onClick={() => { setFm(m); goFt("dakhli"); }}><td><b>{m}</b></td><td>{money(r.sal)}</td><td>{money(r.oth)}</td><td className="pos"><b>{money(r.inc)}</b></td><td className="neg">{money(r.exp)}</td><td><b>{money(r.inc - r.exp)}</b></td></tr>; })}</tbody></table>{monthsAll.length === 0 && <p className="mut">Weli xog ma jirto.</p>}</div></>}
           </>}
 
-          {view === "req" && <div className="split">
-            <form className="card gap" onSubmit={addReq}><h3>Dalab cusub / alaab la doonayo</h3>
-              <label>Alaabta<input required value={rn.item} onChange={e => setRn({ ...rn, item: e.target.value })} placeholder="Tusaale: Abaya Nigis madow" /></label>
-              <div className="two"><label>Qaybta<select value={rn.cat} onChange={e => setRn({ ...rn, cat: e.target.value })}>{CATS.map(c => <option key={c[0]} value={c[0]}>{c[1]}</option>)}</select></label><label>Tirada<input type="number" min="1" value={rn.qty} onChange={e => setRn({ ...rn, qty: e.target.value })} /></label></div>
-              <label>Midab / cabbir<input value={rn.details} onChange={e => setRn({ ...rn, details: e.target.value })} /></label>
-              <div className="two"><label>Macmiilka<input value={rn.customer} onChange={e => setRn({ ...rn, customer: e.target.value })} /></label><label>Telefoon<input value={rn.phone} onChange={e => setRn({ ...rn, phone: e.target.value })} /></label></div>
-              <div className="two"><label>Maalinta loo baahan yahay<input type="date" value={rn.need_date} onChange={e => setRn({ ...rn, need_date: e.target.value })} /></label><label>Xaalad<select value={rn.status} onChange={e => setRn({ ...rn, status: e.target.value })}>{RST.map(x => <option key={x}>{x}</option>)}</select></label></div>
-              <label>Fiiro gaar ah<input value={rn.note} onChange={e => setRn({ ...rn, note: e.target.value })} /></label><button>Kaydi dalabka</button></form>
-            <div className="card wrap"><div className="tabs">{[["today", "Maanta"], ...RST.map(x => [x, x]), ["all", "Dhammaan"]].map(t => <button key={t[0]} className={"tab" + (rf === t[0] ? " on" : "")} onClick={() => setRf(t[0])}>{t[1]}</button>)}</div>
-              <table><thead><tr><th>Alaab</th><th>Qayb</th><th>Tiro</th><th>Macmiil</th><th>Taariikh</th><th>Xaalad</th><th></th></tr></thead><tbody>{reqList.map(r => <tr key={r.id}><td><b>{r.item}</b><div className="mut">{r.details}{r.note ? " · " + r.note : ""}</div></td><td>{cn(r.cat)}</td><td>{r.qty}</td><td>{r.customer || "-"}{r.phone && <div><a href={"tel:" + r.phone}>{r.phone}</a></div>}</td><td>{r.need_date}</td><td><select style={{ width: "auto" }} value={r.status} onChange={e => setStatus(r, e.target.value)}>{RST.map(x => <option key={x}>{x}</option>)}</select></td><td><button className="g sm" onClick={async () => { if (confirm("Tirtir dalabkan?")) { await supabase.from("store_requests").delete().eq("id", r.id); load(); } }}>×</button></td></tr>)}</tbody></table>{reqList.length === 0 && <p className="mut">Dalab ma jiro.</p>}</div></div>}
+          {view === "staff" && isAdmin && <StaffAdmin me={session.user.id} />}
+
+          {view === "cust" && <div className="card wrap"><div className="row" style={{ marginBottom: 8 }}><h3 style={{ margin: 0 }}>Macaamiisha ({custs.length})</h3><span className="mut">Waxay ka timaadaan iibka marka telefoon la geliyo.</span><span style={{ flex: 1 }} /><button className="g sm" onClick={() => exp(() => exportCustomers(custs))}>⬇ Excel</button></div>
+            <table><thead><tr><th>Magac</th><th>Telefoon</th><th>Jeer</th><th>Wadarta</th><th>Markii u dambeysay</th><th></th></tr></thead><tbody>{custs.map(c => <tr key={c.phone}><td><b>{c.name || "-"}</b></td><td><a href={"tel:" + c.phone}>{c.phone}</a></td><td>{c.visits}</td><td><b>{money(c.total)}</b></td><td>{c.last.slice(0, 10)}</td><td><a href={"https://wa.me/" + waNum(c.phone)} target="_blank" rel="noreferrer"><button className="g sm">💬 WhatsApp</button></a></td></tr>)}</tbody></table>{custs.length === 0 && <p className="mut">Weli macmiil telefoon leh ma jiro.</p>}</div>}
+
+          {view === "req" && <>
+            <div className="stats">{[["c3", "🚢", reqOpen, "Dalab socda"], ["c1", "💵", money(transitVal), "Qiimaha alaabta socota"], ["c4", "🧾", money(impMonth), "La dalbaday bishan"]].map(s => <div className={"stat " + s[0]} key={s[3]}><div className="ic">{s[1]}</div><div><b>{s[2]}</b><span>{s[3]}</span></div></div>)}</div>
+            <div className="split">
+              <form className="card gap" onSubmit={addReq}><h3>Dalab cusub (China / Dubai)</h3>
+                <div className="two"><label>Suuqa<select value={rn.origin} onChange={e => setRn({ ...rn, origin: e.target.value })}>{ORIGINS.map(x => <option key={x}>{x}</option>)}</select></label><label>Supplier / dukaan<input value={rn.supplier} onChange={e => setRn({ ...rn, supplier: e.target.value })} /></label></div>
+                <label>Alaabta<input required value={rn.item} onChange={e => setRn({ ...rn, item: e.target.value })} placeholder="Tusaale: Abaya Nigis madow" /></label>
+                <div className="two"><label>Qaybta<select value={rn.cat} onChange={e => setRn({ ...rn, cat: e.target.value })}>{CATS.map(c => <option key={c[0]} value={c[0]}>{c[1]}</option>)}</select></label><label>Tirada<input type="number" min="1" value={rn.qty} onChange={e => setRn({ ...rn, qty: e.target.value })} /></label></div>
+                <label>Midab / cabbir<input value={rn.details} onChange={e => setRn({ ...rn, details: e.target.value })} /></label>
+                <div className="two"><label>Qiimaha xabadda ($)<input type="number" step="0.01" min="0" value={rn.unit_cost} onChange={e => setRn({ ...rn, unit_cost: e.target.value })} /></label><label>Shipping ($)<input type="number" step="0.01" min="0" value={rn.shipping} onChange={e => setRn({ ...rn, shipping: e.target.value })} /></label></div>
+                <div className="tot"><span>Wadarta</span><span>{money(impTotal(rn))}</span></div>
+                <div className="two"><label>Taariikhda dalabka<input type="date" value={rn.order_date} onChange={e => setRn({ ...rn, order_date: e.target.value })} /></label><label>Wakhtiga la filayo (ETA)<input type="date" value={rn.eta} onChange={e => setRn({ ...rn, eta: e.target.value })} /></label></div>
+                <div className="two"><label>Tracking<input value={rn.tracking} onChange={e => setRn({ ...rn, tracking: e.target.value })} /></label><label>Xaalad<select value={rn.status} onChange={e => setRn({ ...rn, status: e.target.value })}>{RST.map(x => <option key={x}>{x}</option>)}</select></label></div>
+                <label>Fiiro gaar ah<input value={rn.note} onChange={e => setRn({ ...rn, note: e.target.value })} /></label>
+                <label>Sawirka caddaynta (invoice / lacag bixin)<input key={String(!!proof)} type="file" accept="image/*" onChange={e => setProof(e.target.files[0])} /></label>
+                <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" style={{ width: "auto" }} checked={asExp} onChange={e => setAsExp(e.target.checked)} />Ku diiwaangeli kharash (Alaab iibsasho)</label>
+                <button>Kaydi dalabka</button></form>
+              <div className="card wrap"><div className="tabs">{[["all", "Dhammaan"], ...RST.map(x => [x, x])].map(t => <button key={t[0]} className={"tab" + (rf === t[0] ? " on" : "")} onClick={() => setRf(t[0])}>{t[1]}</button>)}</div>
+                <table><thead><tr><th>Alaab</th><th>Suuq</th><th>Tiro</th><th>Wadarta</th><th>ETA</th><th>Xaalad</th><th></th></tr></thead><tbody>{reqList.map(r => { const late = r.eta && r.eta < today() && r.status !== "Yimid" && r.status !== "Stock-ga la geliyay"; return <tr key={r.id}><td><b>{r.item}</b><div className="mut">{r.details}{r.note ? " · " + r.note : ""}{r.tracking ? " · #" + r.tracking : ""}</div></td><td>{r.origin}<div className="mut">{r.supplier}</div></td><td>{r.qty}</td><td><b>{money(impTotal(r))}</b></td><td className={late ? "neg" : ""}>{r.eta || "-"}{late && <div className="mut">Dib u dhacay</div>}</td><td><select style={{ width: "auto" }} value={r.status} onChange={e => setStatus(r, e.target.value)}>{RST.map(x => <option key={x}>{x}</option>)}</select></td><td><div className="row">{r.proof_url && <button className="g sm" onClick={() => openProof(r.proof_url)}>📎</button>}<button className="g sm" title="Ku dar Inventory" onClick={() => setEdit({ name: r.item, cat: r.cat, note: r.details || "", variants: [{ color: "", size: "", qty: r.qty }] })}>📦</button><button className="g sm" onClick={async () => { if (confirm("Tirtir dalabkan?")) { await supabase.from("store_imports").delete().eq("id", r.id); load(); } }}>×</button></div></td></tr>; })}</tbody></table>{reqList.length === 0 && <p className="mut">Dalab ma jiro.</p>}</div></div></>}
 
           {view === "rep" && <>
             <div className="row" style={{ marginBottom: 14 }}><select style={{ width: "auto" }} value={per} onChange={e => setPer(+e.target.value)}><option value={7}>7 maalmood</option><option value={30}>30 maalmood</option><option value={90}>90 maalmood</option><option value={0}>Dhammaan</option></select><span style={{ flex: 1 }} /></div>
@@ -273,5 +330,50 @@ function Editor({ p, onClose, onSaved }) {
       {err && <div className="err">{err}</div>}
       <div className="two"><button type="button" className="g" onClick={onClose}>Jooji</button><button disabled={busy}>{busy ? "Waa la kaydinayaa..." : "Kaydi"}</button></div>
     </form></div>
+  );
+}
+
+
+function StaffAdmin({ me }) {
+  const blank = { username: "", full_name: "", role: "cashier", password: "" };
+  const [rows, setRows] = useState([]), [f, setF] = useState(blank), [cred, setCred] = useState(null);
+  const load = useCallback(async () => { const { data } = await supabase.from("staff").select("*").order("created_at"); setRows(data || []); }, []);
+  useEffect(() => { load(); }, [load]);
+  const call = async body => {
+    const { data, error } = await supabase.functions.invoke("admin-users", { body });
+    if (error || data?.error) { alert(data?.error || error.message || "Cilad ayaa dhacday"); return false; }
+    return true;
+  };
+  const gen = () => Array.from(crypto.getRandomValues(new Uint8Array(8)), b => "abcdefghjkmnpqrstuvwxyz23456789"[b % 31]).join("");
+  async function create(e) {
+    e.preventDefault();
+    if (await call({ action: "create", ...f })) { setCred({ username: f.username.trim().toLowerCase(), password: f.password, role: f.role, name: f.full_name }); setF(blank); load(); }
+  }
+  async function reset(r) {
+    if (!confirm("Password cusub u samee " + r.username + "?")) return;
+    const pw = gen();
+    if (await call({ action: "reset", user_id: r.user_id, password: pw })) setCred({ username: r.username, password: pw, role: r.role, name: r.full_name });
+  }
+  const msg = c => "KAFAYA BOUTIQUE\nLink: " + window.location.origin + "\nUsername: " + c.username + "\nPassword: " + c.password + "\nRole: " + ROLE_L[c.role] + "\n(Beddel password-ka marka aad gasho.)";
+  return (
+    <div className="gap">
+      {cred && <div className="card" style={{ background: "#fff8e1" }}><h3>Xogta gelitaanka: {cred.name || cred.username}</h3>
+        <p style={{ margin: 0 }}>Username: <b>{cred.username}</b><br />Password: <b>{cred.password}</b></p>
+        <p className="mut">Password-ka mar kale lama arki karo. Koobi ama u dir hadda. Haddii la lumiyo, admin-ku wuu beddeli karaa.</p>
+        <div className="row"><button className="g sm" onClick={() => navigator.clipboard.writeText(msg(cred))}>📋 Koobi</button><a href={"https://wa.me/?text=" + encodeURIComponent(msg(cred))} target="_blank" rel="noreferrer"><button className="g sm">💬 U dir WhatsApp</button></a><button className="g sm" onClick={() => setCred(null)}>Xir</button></div></div>}
+      <div className="split">
+        <form className="card gap" onSubmit={create}><h3>Shaqaale cusub</h3>
+          <label>Username (code)<input required value={f.username} onChange={e => setF({ ...f, username: e.target.value })} placeholder="tusaale: fadumo" autoCapitalize="none" /></label>
+          <label>Magaca buuxa<input value={f.full_name} onChange={e => setF({ ...f, full_name: e.target.value })} /></label>
+          <label>Doorka<select value={f.role} onChange={e => setF({ ...f, role: e.target.value })}><option value="cashier">Cashier (iib, macaamiil, stock)</option><option value="supervisor">Supervisor (dhammaan marka laga reebo shaqaalaha)</option><option value="admin">Admin (dhammaan)</option></select></label>
+          <label>Password<div className="row"><input required style={{ flex: 1 }} value={f.password} onChange={e => setF({ ...f, password: e.target.value })} /><button type="button" className="g" onClick={() => setF({ ...f, password: gen() })}>🎲</button></div></label>
+          <button>Abuur akoon</button></form>
+        <div className="card wrap"><h3>Shaqaalaha ({rows.length})</h3>
+          <table><thead><tr><th>Username</th><th>Magac</th><th>Doorka</th><th>Xaalad</th><th></th></tr></thead><tbody>{rows.map(r => <tr key={r.user_id}><td><b>{r.username}</b></td><td>{r.full_name}</td>
+            <td><select style={{ width: "auto" }} disabled={r.user_id === me} value={r.role} onChange={async e => { if (await call({ action: "role", user_id: r.user_id, role: e.target.value })) load(); }}>{Object.keys(ROLE_L).map(k => <option key={k} value={k}>{ROLE_L[k]}</option>)}</select></td>
+            <td><span className={"badge " + (r.active ? "ok" : "out")}>{r.active ? "Furan" : "La xiray"}</span></td>
+            <td><div className="row"><button className="g sm" onClick={() => reset(r)}>Reset password</button>{r.user_id !== me && <button className="g sm" onClick={async () => { if (await call({ action: "active", user_id: r.user_id, active: !r.active })) load(); }}>{r.active ? "Xir" : "Fur"}</button>}</div></td></tr>)}</tbody></table></div>
+      </div>
+    </div>
   );
 }
